@@ -1,37 +1,41 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import os
-from langchain.document_loaders import ReadTheDocsLoader
+
+from langchain_community.document_loaders import ReadTheDocsLoader
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Pinecone
-import pinecone
+from langchain_community.vectorstores import Pinecone as PineconeLangChain
+from pinecone import Pinecone
 
-from consts import INDEX_NAME
 
-pinecone.init(
-    api_key=os.environ["PINECONE_API_KEY"],
-    environment=os.environ["PINECONE_ENVIRONMENT_REGION"],
+pc = Pinecone(
+    api_key=os.environ.get("PINECONE_API_KEY"),
 )
 
+INDEX_NAME = "documentation-helper"
+MODEL = "llama2"
+DOCS_PATH = "langchain-docs/"
 
-def ingest_docs() -> None:
-    loader = ReadTheDocsLoader(path="langchain-docs/langchain.readthedocs.io/en/latest")
+def ingest_docs():
+    loader = ReadTheDocsLoader(DOCS_PATH)
+
     raw_documents = loader.load()
-    print(f"loaded {len(raw_documents) }documents")
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, chunk_overlap=100, separators=["\n\n", "\n", " ", ""]
-    )
-    documents = text_splitter.split_documents(documents=raw_documents)
-    print(f"Splitted into {len(documents)} chunks")
+    print(f"loaded {len(raw_documents)} documents")
 
-    for doc in documents:
-        old_path = doc.metadata["source"]
-        new_url = old_path.replace("langchain-docs", "https:/")
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=50)
+    documents = text_splitter.split_documents(raw_documents)
+    for doc in documents[0:25]:
+        new_url = doc.metadata["source"]
+        new_url = new_url.replace("langchain-docs", "https:/")
         doc.metadata.update({"source": new_url})
 
-    print(f"Going to insert {len(documents)} to Pinecone")
-    embeddings = OpenAIEmbeddings()
-    Pinecone.from_documents(documents, embeddings, index_name=INDEX_NAME)
-    print("****** Added to Pinecone vectorstore vectors")
+    embeddings = OllamaEmbeddings(model=MODEL, show_progress=True)
+    print(f"Going to add {len(documents)} to Pinecone")
+    PineconeLangChain.from_documents(documents, embeddings, index_name=INDEX_NAME)
+    print("****Loading to vectorstore done ***")
 
 
 if __name__ == "__main__":

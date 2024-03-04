@@ -2,32 +2,37 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import OllamaEmbeddings
 
 import os
-from typing import Any, Dict, List
-from langchain.chains import ConversationalRetrievalChain
+from typing import Any
+from langchain.chains import RetrievalQA
 from langchain_community.vectorstores.pinecone import Pinecone as PineconeLangChain
 from pinecone import Pinecone
 
 
 pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
 
-INDEX_NAME = "langchain-doc-index"
+INDEX_NAME = "documentation-helper"
+MODEL = "llama2"
+DOCS_PATH = "langchain-docs/"
 
 
-def run_llm(query: str, chat_history: List[Dict[str, Any]] = []):
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+def run_llm(query: str) -> Any:
+    embeddings = OllamaEmbeddings(model=MODEL, show_progress=True)
     docsearch = PineconeLangChain.from_existing_index(
-        embedding=embeddings,
-        index_name=INDEX_NAME,
+        index_name=INDEX_NAME, embedding=embeddings
     )
-    chat = ChatOpenAI(
-        verbose=True,
-        temperature=0,
+    chat = ChatOllama(model=MODEL,verbose=True, temperature=0)
+    qa = RetrievalQA.from_chain_type(
+        llm=chat,
+        chain_type="stuff",
+        retriever=docsearch.as_retriever(),
+        return_source_documents=True,
     )
+    return qa({"query": query})
 
-    qa = ConversationalRetrievalChain.from_llm(
-        llm=chat, retriever=docsearch.as_retriever(), return_source_documents=True
-    )
-    return qa.invoke({"question": query, "chat_history": chat_history})
+
+if __name__ == "__main__":
+    print(run_llm(query="What is LangChain chain?"))
